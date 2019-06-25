@@ -1,0 +1,9 @@
+[package]
+name = "embjs"
+version = "0.1.0"
+authors = ["Adam Winiarczuk <adamosca@gmail.com>"]
+edition = "2018"
+
+
+[dependencies]
+chakracore = {git="https://github.com/darfink/chakracore-rs"}
