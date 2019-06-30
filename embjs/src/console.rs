@@ -1,6 +1,7 @@
 use crate::js;
 
-use js::ContextGuard;
+use js::context::ContextGuard;
+//use js::ContextGuard;
 use js::value::Value;
 use js::value::function::CallbackInfo;
 

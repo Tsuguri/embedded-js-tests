@@ -6,11 +6,28 @@ use console::create_console_logging;
 use std::path::{Path, PathBuf};
 use std::mem::ManuallyDrop;
 
-struct ScriptFactory {
+use js::context::ContextGuard;
+
+struct ScriptFactory {}
+
+
+struct Script {
+    object: js::value::Object,
+    update: Option<js::value::Function>,
+}
+
+impl Script {
+    pub fn new(guard: &ContextGuard, object: js::value::Object) -> Self {
+        let update = object.get(guard, js::Property::new(guard, "update")).into_function();
+        Self {
+            object,
+            update,
+        }
+    }
 }
 
 impl ScriptFactory {
-    fn from_code(guard: &js::ContextGuard, name: String, path: &Path, code: &str) -> Result<js::value::Function, js::Error> {
+    fn from_code(guard: &ContextGuard, name: String, path: &Path, code: &str) -> Result<js::value::Function, js::Error> {
         let def = js::script::parse(guard, code)?;
         let factory = def.construct(&guard, guard.global(), &[])?;
         let factory = match factory.into_function() {
@@ -19,7 +36,7 @@ impl ScriptFactory {
         };
         Result::Ok(factory)
     }
-    fn from_path(guard: &js::ContextGuard, path: &Path) -> Result<js::value::Function, js::Error> {
+    fn from_path(guard: &ContextGuard, path: &Path) -> Result<js::value::Function, js::Error> {
         let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
 
         let code = std::fs::read_to_string(path).unwrap();
@@ -42,7 +59,7 @@ impl std::ops::Drop for JsEngine {
 }
 
 impl JsEngine {
-    pub fn guard<'a>(&'a self) -> js::ContextGuard<'a> {
+    pub fn guard<'a>(&'a self) -> ContextGuard<'a> {
         self.context.make_current().unwrap()
     }
     pub fn new() -> Result<JsEngine, js::Error> {
@@ -54,7 +71,7 @@ impl JsEngine {
         })
     }
 
-    fn load_at_path(guard: &js::ContextGuard, parent: &js::value::Object, directory: &Path) -> Result<(), &'static str> {
+    fn load_at_path(guard: &ContextGuard, parent: &js::value::Object, directory: &Path) -> Result<(), &'static str> {
         println!("loading scripts from: {:?}", directory);
 
         let paths = std::fs::read_dir(directory).map_err(|err| "counldn't read directory")?;
@@ -68,7 +85,6 @@ impl JsEngine {
                     Option::None =>
                         return Result::Err("invalid character in namespace string"),
                     Option::Some(name) => name,
-
                 };
                 println!("creating namespace: {:?}", namespace);
                 let obj = js::value::Object::new(guard);
@@ -79,7 +95,6 @@ impl JsEngine {
                 let p2 = p.file_stem().unwrap().to_str().unwrap();
                 let factory = ScriptFactory::from_path(guard, &p).unwrap();
                 parent.set(guard, js::Property::new(guard, p2), factory);
-
             }
         }
 
@@ -92,6 +107,22 @@ impl JsEngine {
 
 
         Self::load_at_path(&guard, &go, directory)
+    }
+
+
+    pub fn create(&self, name: &str) -> Result<Script, js::Error> {
+        let command = format!("new {}()", name);
+        let guard = self.guard();
+
+        let obj = js::script::eval(&guard, &command)?;
+        let obj = obj.into_object().unwrap();
+
+        Result::Ok(Script::new(&guard, obj))
+    }
+
+    pub fn run_with<F: FnOnce(&ContextGuard)>(&self, callback: F) {
+        let p = self.guard();
+        callback(&p);
     }
 }
 
@@ -123,15 +154,34 @@ fn main() {
         constructor() {
             this.wysokosc = 10;
             this.szerokosc = 20;
-            this.whatever = new namespace1.file2()
+            this.whatever = new namespace1.file2();
+            this.whatever2 = new file1();
             console.log(\"constructed\");
         }\
     }").unwrap();
 
-    let p = factory.construct(&guard, go, &[]).unwrap();
+    let p = factory.construct(&guard, go, &[]).unwrap().into_object().unwrap();
+
+    let g = engine.create("namespace2.file3").unwrap();
 
 
-//    for prop in p.get_own_property_names(&guard).iter(&guard) {
-//        println!("{}: {}", prop.to_string(&guard), p.get(&guard, js::Property::new(&guard, &prop.to_string(&guard))).to_string(&guard));
-//    }
+    let objs : Vec<_> = (0..10).map(|x|{
+        engine.create("namespace2.file3").unwrap()
+    }).collect();
+
+    engine.run_with(|x| {
+        for prop in p.get_own_property_names(x).iter(x) {
+            println!("{}: {}", prop.to_string(x), p.get(x, js::Property::new(x, &prop.to_string(x))).to_string(x));
+        }
+
+        for obj in objs {
+            match &obj.update {
+                None => (),
+                Some(fun) => {fun.call(x, &[]).unwrap();},
+            }
+        }
+
+
+        println!("{:?}, {:?}", g.object.to_string(x), g.update.map(|y| y.to_string(x)));
+    });
 }
