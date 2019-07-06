@@ -6,4 +6,4 @@ edition = "2018"
 
 
 [dependencies]
-chakracore = {git="https://github.com/darfink/chakracore-rs"}
+chakracore = {git="https://github.com/darfink/chakracore-rs", rev="93adef0a4ab297fbeaf228c403b8090e0979a1aa"}

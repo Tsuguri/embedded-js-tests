@@ -6,7 +6,7 @@ use console::create_console_logging;
 use std::path::{Path, PathBuf};
 use std::mem::ManuallyDrop;
 
-use js::context::ContextGuard;
+use js::ContextGuard;
 
 struct ScriptFactory {}
 
@@ -126,12 +126,44 @@ impl JsEngine {
     }
 }
 
+
+struct Vector {
+    data: [f32;3],
+}
+
+fn create_js_vector(guard: &ContextGuard) {
+    let object_prototype = js::value::Object::new(guard);
+
+    let object_function1 = js::value::Function::new(guard, Box::new(|g, args| unsafe {
+        let val = args.this.into_external().unwrap().value::<Vector>();
+
+        println!("printing from vector function");
+
+
+        Result::Ok(js::value::null(g))
+    }));
+    object_prototype.set(guard, js::Property::new(guard, "log"), object_function1);
+    let fnc = js::value::Function::new(guard, Box::new( move |g, args| {
+        let obj = js::value::External::new(g, Box::new(Vector{data: [0.0f32,0.0,0.0]}));
+        obj.set_prototype(g, object_prototype.clone());
+        Result::Ok(obj.into())
+
+    }));
+
+    let global = guard.global();
+
+    global.set(guard, js::Property::new(guard, "Vector"), fnc);
+
+}
+
 fn main() {
     let mut engine = JsEngine::new().unwrap();
 
     engine.load_all_scripts("./test_scripts/".as_ref()).unwrap();
     let engine = engine;
     let guard = engine.guard();
+
+    create_js_vector(&guard);
     let go = guard.global();
 
     create_console_logging(&guard);
@@ -184,4 +216,9 @@ fn main() {
 
         println!("{:?}, {:?}", g.object.to_string(x), g.update.map(|y| y.to_string(x)));
     });
+
+    engine.run_with(|x| {
+        js::script::eval(x, "let p = new Vector(); p.log()").unwrap();
+
+    })
 }
