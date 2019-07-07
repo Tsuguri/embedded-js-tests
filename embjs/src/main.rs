@@ -126,34 +126,72 @@ impl JsEngine {
     }
 }
 
+struct GameObject {
+
+}
+
+struct Scene {
+    objects: Vec<GameObject>,
+}
+
+impl Scene {
+    pub fn new() -> Box<Scene> {
+        let sc = Scene {objects: vec![]};
+        Box::new(sc)
+    }
+}
 
 struct Vector {
-    data: [f32;3],
+    data: [f32; 3],
+}
+fn create_js_game_object(guard: &ContextGuard) {
+    let object_prototype = js::value::Object::new(guard);
+}
+
+fn create_scene(scene: &mut Scene, guard: &ContextGuard) {
+    let go = guard.global();
+    let sc = unsafe {js::value::External::from_ptr(guard, scene);};
+    go.set(guard, js::Property::new(guard, "_&sc"), sc);
 }
 
 fn create_js_vector(guard: &ContextGuard) {
     let object_prototype = js::value::Object::new(guard);
 
-    let object_function1 = js::value::Function::new(guard, Box::new(|g, args| unsafe {
-        let val = args.this.into_external().unwrap().value::<Vector>();
+    {
+        let object_function1 = js::value::Function::new(guard, Box::new(|g, args| unsafe {
+            let val = args.this.into_external().unwrap().value::<Vector>();
 
-        println!("printing from vector function");
+            println!("printing from vector function");
 
 
-        Result::Ok(js::value::null(g))
-    }));
-    object_prototype.set(guard, js::Property::new(guard, "log"), object_function1);
-    let fnc = js::value::Function::new(guard, Box::new( move |g, args| {
-        let obj = js::value::External::new(g, Box::new(Vector{data: [0.0f32,0.0,0.0]}));
+            Result::Ok(js::value::null(g))
+        }));
+        object_prototype.set(guard, js::Property::new(guard, "log"), object_function1);
+    }
+    {
+        let prop = js::value::Object::new(guard);
+        prop.set(guard, js::Property::new(guard, "get"), js::value::Function::new(guard, Box::new(|g, args| unsafe {
+            let val = args.this.into_external().unwrap().value::<Vector>();
+            println!("get!");
+            Result::Ok(js::value::Number::new(g, 12).into())
+        })));
+        prop.set(guard, js::Property::new(guard, "set"), js::value::Function::new(guard, Box::new(|g, args| unsafe {
+            let val = args.this.into_external().unwrap().value::<Vector>();
+            println!("set!");
+            Result::Ok(js::value::null(g))
+        })));
+
+        object_prototype.define_property(guard, js::Property::new(guard, "some_prop"), prop);
+    }
+    let fnc = js::value::Function::new(guard, Box::new(move |g, args| {
+        let obj = js::value::External::new(g, Box::new(Vector { data: [0.0f32, 0.0, 0.0] }));
         obj.set_prototype(g, object_prototype.clone());
         Result::Ok(obj.into())
-
     }));
 
     let global = guard.global();
 
     global.set(guard, js::Property::new(guard, "Vector"), fnc);
-
 }
 
 fn main() {
@@ -197,7 +235,7 @@ fn main() {
     let g = engine.create("namespace2.file3").unwrap();
 
 
-    let objs : Vec<_> = (0..10).map(|x|{
+    let objs: Vec<_> = (0..10).map(|x| {
         engine.create("namespace2.file3").unwrap()
     }).collect();
 
@@ -209,7 +247,7 @@ fn main() {
         for obj in objs {
             match &obj.update {
                 None => (),
-                Some(fun) => {fun.call(x, &[]).unwrap();},
+                Some(fun) => { fun.call(x, &[]).unwrap(); }
             }
         }
 
@@ -218,7 +256,16 @@ fn main() {
     });
 
     engine.run_with(|x| {
-        js::script::eval(x, "let p = new Vector(); p.log()").unwrap();
-
+        js::script::eval(x, "\
+        class Ppp extends Vector {
+            constructor() {
+                super()
+            }
+        }
+        let p = new Ppp();
+        p.log();
+        let f = p.some_prop;
+        p.some_prop=12
+        ").unwrap();
     })
 }
